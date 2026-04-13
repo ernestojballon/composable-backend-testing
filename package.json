@@ -1,0 +1,33 @@
+{
+  "name": "@composable-backend/testing",
+  "version": "1.0.0",
+  "description": "Test harness for composable-backend — simplifies setup, captures events, and provides assertions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ernestojballon/composable-backend-testing"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "composable-backend": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "composable-backend": "file:../composable-backend",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.4"
+  }
+}
