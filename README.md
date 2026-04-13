@@ -1,6 +1,6 @@
 # @composable-backend/testing
 
-Test harness for [composable-backend](https://github.com/ernestojballon/composable-backend). Reduces test boilerplate from ~15 lines to 2 and adds event spying.
+Test utilities for [composable-backend](https://github.com/ernestojballon/composable-backend). Test composable functions with zero boilerplate.
 
 ## Install
 
@@ -12,19 +12,31 @@ Peer dependency: `composable-backend` (^1.2.0).
 
 ## Quick start
 
-### Before (manual setup)
+A composable is just input -> function -> output. Test it directly:
+
+```typescript
+import { describe, expect, it } from 'vitest';
+import { testTask } from '@composable-backend/testing';
+import myTask from '../src/my-task.task.js';
+
+describe('my task', () => {
+  it('returns expected result', async () => {
+    const result = await testTask(myTask, { name: 'Ada' });
+    expect(result).toEqual({ message: 'Hello Ada!' });
+  });
+});
+```
+
+No setup. No beforeAll. No platform initialization. Just import the task and test it.
+
+### Before (manual setup — 15 lines)
 
 ```typescript
 import { fileURLToPath } from 'url';
 import { AppConfig, Platform, PostOffice, Sender, EventEnvelope } from 'composable-backend';
 import myTask from '../src/my-task.task.js';
 
-function getRootFolder() {
-  const folder = fileURLToPath(new URL('..', import.meta.url));
-  const path = folder.includes('\\') ? folder.replaceAll('\\', '/') : folder;
-  const colon = path.indexOf(':');
-  return colon == 1 ? path.substring(colon + 1) : path;
-}
+function getRootFolder() { /* ... 5 lines ... */ }
 
 let platform: Platform;
 
@@ -35,86 +47,100 @@ beforeAll(async () => {
   platform.registerComposable(myTask);
 });
 
-it('returns a greeting', async () => {
+it('works', async () => {
   const po = new PostOffice(new Sender('unit.test', '1', 'TEST'));
   const result = await po.request(
-    new EventEnvelope().setTo('v1.my.task').setBody({ name: 'Ada' }),
-    5000
+    new EventEnvelope().setTo('v1.my.task').setBody({ name: 'Ada' }), 5000
   );
   expect(result.getBody()).toEqual({ message: 'Hello Ada!' });
 });
 ```
 
-### After (with test harness)
+### After (testTask — 1 line)
 
 ```typescript
-import { TestHarness } from '@composable-backend/testing';
+import { testTask } from '@composable-backend/testing';
 import myTask from '../src/my-task.task.js';
 
-let harness: TestHarness;
-
-beforeAll(async () => {
-  harness = await TestHarness.setup();
-  harness.register(myTask);
-});
-
-it('returns a greeting', async () => {
-  const result = await harness.call('v1.my.task', { name: 'Ada' });
+it('works', async () => {
+  const result = await testTask(myTask, { name: 'Ada' });
   expect(result).toEqual({ message: 'Hello Ada!' });
 });
 ```
 
 ## API
 
+### testTask(task, body?, headers?)
+
+Test a composable function directly. Calls the handler without the platform or event bus.
+
+```typescript
+// Basic
+const result = await testTask(myTask, { name: 'Ada' });
+
+// With headers
+const result = await testTask(myTask, { data: 'payload' }, { topic: 'leads' });
+
+// No input
+const result = await testTask(myTask);
+```
+
+- Runs `inputSchema` validation if defined on the task
+- Runs `outputSchema` validation if defined on the task
+- Returns the handler's return value directly
+
 ### TestHarness
+
+For tests that need the full event bus (task-to-task communication, spying):
+
+```typescript
+import { TestHarness } from '@composable-backend/testing';
+
+const harness = await TestHarness.setup();
+harness.register(myTask);
+
+const result = await harness.call('v1.my.task', { name: 'Ada' });
+```
 
 | Method | Returns | Description |
 |---|---|---|
-| `TestHarness.setup(options?)` | `Promise<TestHarness>` | Initialize platform and config. Auto-detects resources folder. |
-| `register(composable)` | `void` | Register a `defineComposable()` task |
-| `register(route, composable, instances?, visibility?)` | `void` | Register a class-style composable |
-| `call<T>(route, body?, timeout?)` | `Promise<T>` | RPC call — returns response body directly |
-| `request(route, body?, headers?, timeout?)` | `Promise<EventEnvelope>` | RPC call — returns full envelope (headers, status, body) |
-| `send(route, body?, headers?)` | `Promise<void>` | Fire-and-forget event |
-| `spy(route)` | `EventSpy` | Create a spy that captures all events sent to a route |
-| `clearSpies()` | `void` | Reset all spy counters |
-| `getPlatform()` | `Platform` | Access the underlying Platform instance |
+| `TestHarness.setup(options?)` | `Promise<TestHarness>` | Initialize platform and config |
+| `register(composable)` | `void` | Register a composable |
+| `call<T>(route, body?, timeout?)` | `Promise<T>` | RPC — returns body directly |
+| `request(route, body?, headers?, timeout?)` | `Promise<EventEnvelope>` | RPC — returns full envelope |
+| `send(route, body?, headers?)` | `Promise<void>` | Fire-and-forget |
+| `spy(route)` | `EventSpy` | Capture events for assertions |
+| `clearSpies()` | `void` | Reset all spies |
 
 ### EventSpy
 
-Captures events sent to a route for inspection.
+Capture events sent to a route:
 
 ```typescript
 const spy = harness.spy('kafka.notification');
 
-// ... run code that sends to kafka.notification ...
+await harness.call('v1.lead.publish', leadData);
 
 expect(spy.count()).toBe(1);
-expect(spy.last().body).toEqual({ content: 'hello' });
+expect(spy.last().body).toEqual({ content: leadData });
 expect(spy.hasHeader('topic', 'leads.scored')).toBe(true);
-expect(spy.hasBody({ content: 'hello' })).toBe(true);
 ```
 
 | Method | Returns | Description |
 |---|---|---|
 | `events()` | `CapturedEvent[]` | All captured events |
 | `count()` | `number` | Number of captured events |
-| `first()` | `CapturedEvent \| null` | First captured event |
-| `last()` | `CapturedEvent \| null` | Last captured event |
-| `at(index)` | `CapturedEvent \| null` | Event at index |
-| `hasEvent(predicate)` | `boolean` | Any event matches predicate |
+| `first()` / `last()` | `CapturedEvent \| null` | First/last event |
+| `at(index)` | `CapturedEvent \| null` | Event by index |
 | `hasHeader(key, value)` | `boolean` | Any event has this header |
 | `hasBody(body)` | `boolean` | Any event has this body (deep equality) |
+| `hasEvent(predicate)` | `boolean` | Any event matches predicate |
 | `clear()` | `void` | Reset captured events |
 
-### CapturedEvent
+## When to use what
 
-```typescript
-interface CapturedEvent {
-  to: string;
-  from: string | null;
-  headers: Record<string, string>;
-  body: unknown;
-  timestamp: number;
-}
-```
+| Need | Use |
+|---|---|
+| Test a single task (most common) | `testTask(task, input)` |
+| Test task-to-task communication | `TestHarness` + `call()` |
+| Spy on events sent to a route | `TestHarness` + `spy()` |

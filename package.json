@@ -1,6 +1,6 @@
 {
   "name": "@composable-backend/testing",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Test harness for composable-backend — simplifies setup, captures events, and provides assertions",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { defineComposable, EventEnvelope } from 'composable-backend';
-import { TestHarness, EventSpy } from '../src/index.js';
+import { testTask, TestHarness, EventSpy } from '../src/index.js';
 
 const echoTask = defineComposable({
   process: 'test.echo',
@@ -17,6 +17,47 @@ const greetTask = defineComposable({
     return { message: `Hello ${body.name}!` };
   },
   instances: 1,
+});
+
+describe('testTask', () => {
+  it('calls handler directly — no setup needed', async () => {
+    const result = await testTask(greetTask, { name: 'Ada' });
+    expect(result).toEqual({ message: 'Hello Ada!' });
+  });
+
+  it('passes headers to the event', async () => {
+    const headerTask = defineComposable({
+      process: 'test.headers',
+      handler: async (evt: EventEnvelope) => {
+        return { topic: evt.getHeader('topic') };
+      },
+    });
+    const result = await testTask(headerTask, null, { topic: 'leads.scored' });
+    expect(result).toEqual({ topic: 'leads.scored' });
+  });
+
+  it('runs inputSchema validation', async () => {
+    const strictTask = defineComposable({
+      process: 'test.strict',
+      handler: async (evt: EventEnvelope) => evt.getBody(),
+      inputSchema: {
+        parse(value: unknown) {
+          if (!value || typeof value !== 'object' || !('name' in (value as object))) {
+            throw new Error('name is required');
+          }
+          return value;
+        },
+      },
+    });
+    await expect(testTask(strictTask, {})).rejects.toThrow('name is required');
+    const result = await testTask(strictTask, { name: 'ok' });
+    expect(result).toEqual({ name: 'ok' });
+  });
+
+  it('works with no input', async () => {
+    const result = await testTask(echoTask);
+    expect(result).toBeNull();
+  });
 });
 
 describe('TestHarness', () => {
